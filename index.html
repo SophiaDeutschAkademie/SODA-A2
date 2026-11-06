@@ -316,6 +316,9 @@ function sodaScrypt(pw, salt, N, r, p, dkLen, subtle) {
   /* 챕터 본문의 컴퓨터 전용 / 핸드폰 전용 화면: 표지 화면과 같은 기준으로 기기를 판별해 data-device 를 달고, 핸드폰 전용 규칙을 덧씌운다 */
   var DEV_CSS = [
     'html[data-device="pc"] #col{max-width:1080px!important}',
+    'html[data-device="pc"] .rail,html[data-device="pc"] .scrim,html[data-device="pc"] [data-action="menu"]{display:none!important}',
+    'html[data-device="pc"] .ex-layout{display:block!important}',
+    '@media screen{html[data-device="pc"] #v-arb .paper,html[data-device="pc"] #v-arb .ab-tools-in{max-width:1080px!important}}',
     'html[data-device="phone"] .plan-grid{grid-template-columns:1fr!important}',
     'html[data-device="phone"] [style*="padding: 32px 20px 48px"]{padding:14px 12px 40px!important}',
     'html[data-device="phone"] [style*="padding: 22px 28px 28px"]{padding:20px 16px 26px!important}',
