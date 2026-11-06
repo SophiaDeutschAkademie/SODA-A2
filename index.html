@@ -64,7 +64,9 @@ input.bad{border-color:var(--red);animation:shake .3s}
 #msg{min-height:26px;margin-top:12px;font-size:14px;color:var(--ink-3)}#msg.err{color:var(--red)}
 .back{display:inline-block;margin-top:22px;font-size:14.5px}
 #reader{position:fixed;inset:0;z-index:1000;background:var(--ivory);display:none}
-#reader.on{display:flex;flex-direction:column}
+#reader.on{display:flex;flex-direction:column;overflow:hidden}
+#reader .fsbar{transition:margin-top .25s ease,opacity .2s ease}
+#reader[data-bar="off"] .fsbar{opacity:0;pointer-events:none}
 #reader iframe{width:100%;flex:1 1 auto;min-height:0;border:0;display:block}
 .fsbar{flex:none;display:flex;justify-content:flex-end;align-items:center;gap:10px;min-height:42px;padding:env(safe-area-inset-top) max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left));background:var(--ivory);border-bottom:1px solid var(--line);font-size:12.5px;line-height:1;color:var(--ink-3)}
 .fsbar .fsl{font-weight:600;letter-spacing:.02em}
@@ -314,7 +316,37 @@ function sodaScrypt(pw, salt, N, r, p, dkLen, subtle) {
   function fsGet() { var v = 1; try { v = parseFloat(localStorage.getItem(FS_KEY)); } catch (e) {} return FS_STEPS.indexOf(v) >= 0 ? v : 1; }
   function fsSet(v) { try { localStorage.setItem(FS_KEY, String(v)); } catch (e) {} }
   /* 챕터 본문의 컴퓨터 전용 / 핸드폰 전용 화면: 표지 화면과 같은 기준으로 기기를 판별해 data-device 를 달고, 핸드폰 전용 규칙을 덧씌운다 */
+  /* 스크롤을 내리면 상단 메뉴를 숨기고, 올리면 다시 보인다 (챕터 안에서 실행) */
+  function chapterNav() {
+    var r = document.documentElement, last = window.pageYOffset || 0, dir = 0, anchor = last, hidden = false, lock = 0, tick = false;
+    function set(h) {
+      if (h === hidden) return;
+      hidden = h; lock = Date.now() + 380;
+      r.classList.toggle('soda-nav-hidden', h);
+      try { parent.postMessage({ soda: 'bar', hidden: h }, '*'); } catch (e) {}
+    }
+    function run() {
+      tick = false;
+      var y = window.pageYOffset || 0;
+      if (Date.now() < lock) { last = y; return; }
+      if (y <= 8) { set(false); dir = 0; last = y; return; }
+      if (y > last) {
+        if (dir !== 1) { dir = 1; anchor = last; }
+        if (y - anchor > 14 && y > 64 && !document.querySelector('.menu-open')) set(true);
+      } else if (y < last) {
+        if (dir !== -1) { dir = -1; anchor = last; }
+        if (anchor - y > 14) set(false);
+      }
+      last = y;
+    }
+    window.addEventListener('scroll', function () { if (!tick) { tick = true; requestAnimationFrame(run); } }, { passive: true });
+    window.addEventListener('hashchange', function () { set(false); last = window.pageYOffset || 0; });
+  }
   var DEV_CSS = [
+    '.topnav{transition:transform .25s ease}',
+    '#v-exp .ex-bar,#v-arb .ab-tools,.section-nav{transition:top .25s ease}',
+    'html.soda-nav-hidden #v-exp .ex-bar,html.soda-nav-hidden #v-arb .ab-tools,html.soda-nav-hidden .section-nav{top:0!important}',
+    'html.soda-nav-hidden .topnav{transform:translateY(-100%)}',
     'html[data-device="pc"] #col{max-width:1080px!important}',
     'html[data-device="pc"] .rail,html[data-device="pc"] .scrim,html[data-device="pc"] [data-action="menu"]{display:none!important}',
     'html[data-device="pc"] .ex-layout{display:block!important}',
@@ -327,7 +359,8 @@ function sodaScrypt(pw, salt, N, r, p, dkLen, subtle) {
   var DEV_INJECT = '<style data-soda-device>' + DEV_CSS + '</style><script>(function(){var r=document.documentElement;'
     + 'function dev(){var w=window.innerWidth,sh=Math.min(screen.width||w,screen.height||w),t=!!(window.matchMedia&&matchMedia("(pointer:coarse)").matches);return(w<=640||(t&&sh<=500))?"phone":"pc";}'
     + 'function set(){var d=dev();if(r.getAttribute("data-device")!==d)r.setAttribute("data-device",d);}'
-    + 'set();addEventListener("resize",set);addEventListener("orientationchange",set);})();' + '<\/script>';
+    + 'set();addEventListener("resize",set);addEventListener("orientationchange",set);})();' + '<\/script>'
+    + '<script>(' + chapterNav.toString() + ')();' + '<\/script>';
   function injectFS(html) {
     var h = html.indexOf('</head>');
     if (h >= 0) html = html.slice(0, h) + DEV_INJECT + html.slice(h);
@@ -363,6 +396,7 @@ function sodaScrypt(pw, salt, N, r, p, dkLen, subtle) {
 
   function openReader(html) {
     closeReader(true);
+    $('reader').removeAttribute('data-bar');
     var f = document.createElement('iframe');
     f.srcdoc = injectFS(html); f.title = '챕터 본문'; f.setAttribute('allow', 'autoplay');
     $('reader').appendChild(fsBar(f)); $('reader').appendChild(f); $('reader').className = 'on';
@@ -372,7 +406,7 @@ function sodaScrypt(pw, salt, N, r, p, dkLen, subtle) {
   function closeReader(silent) {
     var r = $('reader');
     if (r.className !== 'on') return;
-    r.className = ''; r.textContent = '';
+    r.className = ''; r.textContent = ''; r.removeAttribute('data-bar');
     if (frameURL) { URL.revokeObjectURL(frameURL); frameURL = null; }
     document.body.style.overflow = '';
     if (!silent) show('list');
@@ -422,6 +456,12 @@ function sodaScrypt(pw, salt, N, r, p, dkLen, subtle) {
   });
   window.addEventListener('message', function (ev) {
     var f = $('reader').querySelector('iframe');
+    if (f && ev.source === f.contentWindow && ev.data && ev.data.soda === 'bar') {
+      var fb = $('reader').querySelector('.fsbar');
+      $('reader').setAttribute('data-bar', ev.data.hidden ? 'off' : 'on');
+      if (fb) fb.style.marginTop = ev.data.hidden ? (-fb.offsetHeight) + 'px' : '';
+      return;
+    }
     if (f && ev.source === f.contentWindow && ev.data === 'soda-list') { closeReader(false); try { history.replaceState(null, '', '#list'); } catch (e) {} }
   });
   window.addEventListener('popstate', function () {
